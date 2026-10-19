@@ -3,20 +3,26 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: TrustVault document API. Every document operation is authorized on the server for the current Clerk identity.
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: account
+  - name: documents
+  - name: permissions
+  - name: activity
+  - name: administration
+security:
+  - clerkSession: []
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
+      security: []
       responses:
         "200":
           description: Healthy
@@ -24,13 +30,535 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /me:
+    get:
+      operationId: getCurrentUser
+      tags: [account]
+      summary: Get the signed-in user's TrustVault profile
+      description: Any authenticated user. Synchronizes identity from the verified Clerk session; roles are stored and enforced by the application.
+      responses:
+        "200":
+          description: Current profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /users/search:
+    get:
+      operationId: searchUsers
+      tags: [account]
+      summary: Find registered people by email or name
+      description: Any authenticated user. Only registered TrustVault accounts are returned so grants always target a real identity.
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 120 }
+      responses:
+        "200":
+          description: Matching users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [activity]
+      summary: Get the signed-in user's safe activity summary
+      description: Any authenticated user. Activity is limited to events they caused and documents they may read; administrators also receive system counts.
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dashboard" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      summary: Search documents the current user may read
+      description: Any authenticated user. Results are limited to documents owned by them or explicitly granted to them; administrators do not get implicit file access.
+      parameters:
+        - in: query
+          name: q
+          required: false
+          schema: { type: string, maxLength: 120 }
+        - in: query
+          name: owner
+          required: false
+          schema: { type: string, maxLength: 120 }
+        - in: query
+          name: category
+          required: false
+          schema: { type: string, maxLength: 80 }
+        - in: query
+          name: from
+          required: false
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Accessible documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Document" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createDocument
+      tags: [documents]
+      summary: Create a pending document and a short-lived private upload URL
+      description: An authenticated owner or administrator. Requires a validated name, category, MIME type, and size; the file remains inaccessible until completion validation succeeds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentInput" }
+      responses:
+        "201":
+          description: Pending document and upload destination
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentUpload" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /documents/{documentId}:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      operationId: getDocument
+      tags: [documents]
+      summary: Get document metadata and explicit grants
+      description: The owner or a person with a current read or edit grant. A failed attempt is recorded even when the document ID is unknown.
+      responses:
+        "200":
+          description: Document metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentDetail" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateDocument
+      tags: [documents]
+      summary: Edit document metadata
+      description: The owner or a person with a current edit grant. A read-only grant cannot make changes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocumentUpdate" }
+      responses:
+        "200":
+          description: Updated document
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteDocument
+      tags: [documents]
+      summary: Permanently delete a document
+      description: The owner only. The deletion is audited before private object bytes and metadata are removed.
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /documents/{documentId}/complete:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    post:
+      operationId: completeDocumentUpload
+      tags: [documents]
+      summary: Validate and activate an uploaded document
+      description: The uploader only. The server checks the stored object's actual size, declared type, and file signature before anyone else can read it.
+      responses:
+        "200":
+          description: Active document
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /documents/{documentId}/download:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    get:
+      operationId: downloadDocument
+      tags: [documents]
+      summary: Download document bytes through an authorized server route
+      description: The owner or a person with a current read or edit grant. No durable download URL is issued, so revoked access takes effect on the next request. Both allowed and denied attempts are audited.
+      responses:
+        "200":
+          description: Private document bytes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /documents/{documentId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+    post:
+      operationId: grantDocumentPermission
+      tags: [permissions]
+      summary: Grant a named registered person read or edit access
+      description: The document owner only. The recipient is resolved from a registered account; every grant is audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PermissionInput" }
+      responses:
+        "201":
+          description: Grant created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentGrant" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /documents/{documentId}/permissions/{permissionId}:
+    parameters:
+      - $ref: "#/components/parameters/DocumentId"
+      - in: path
+        name: permissionId
+        required: true
+        schema: { type: integer, minimum: 1 }
+    delete:
+      operationId: revokeDocumentPermission
+      tags: [permissions]
+      summary: Revoke a document grant immediately
+      description: The document owner only. Download requests are authorized against the live grant on every request; no reusable read URL is issued.
+      responses:
+        "204":
+          description: Grant revoked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [administration]
+      summary: Get system activity and security indicators
+      description: Administrators only. Shows counts and refused access attempts, not document bytes.
+      responses:
+        "200":
+          description: Admin overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOverview" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/audit:
+    get:
+      operationId: listAuditEvents
+      tags: [administration]
+      summary: Search the append-only audit trail
+      description: Administrators only. Includes allowed and denied document access attempts.
+      parameters:
+        - in: query
+          name: action
+          required: false
+          schema: { type: string, maxLength: 80 }
+        - in: query
+          name: actor
+          required: false
+          schema: { type: string, maxLength: 120 }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEvent" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/audit/verify:
+    get:
+      operationId: verifyAuditChain
+      tags: [administration]
+      summary: Verify the audit hash chain
+      description: Administrators only. Recomputes event hashes and reports the first invalid link, if any.
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditVerification" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/users:
+    get:
+      operationId: listUsers
+      tags: [administration]
+      summary: List registered users and roles
+      description: Administrators only. Role changes are server-side and audited.
+      responses:
+        "200":
+          description: Registered people
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/users/{userId}/role:
+    parameters:
+      - in: path
+        name: userId
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 255 }
+    patch:
+      operationId: changeUserRole
+      tags: [administration]
+      summary: Change an account's TrustVault role
+      description: Administrators only. Role changes are audited and never grant access to existing documents unless a document-specific grant exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserRoleInput" }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
+  securitySchemes:
+    clerkSession:
+      type: apiKey
+      in: cookie
+      name: __session
+      description: Clerk-managed browser session cookie.
+  parameters:
+    DocumentId:
+      in: path
+      name: documentId
+      required: true
+      schema: { type: integer, minimum: 1 }
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: A valid signed-in session is required
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The current identity does not have the required role or document grant
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Document, user, or grant not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
     HealthStatus:
       type: object
+      required: [status]
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+    User:
+      type: object
+      required: [id, email, name, role]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [admin, owner, viewer] }
+    Document:
+      type: object
+      required: [id, name, category, description, ownerId, ownerEmail, ownerName, size, contentType, state, createdAt, updatedAt, canEdit, isOwner]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        category: { type: string }
+        description: { type: string }
+        ownerId: { type: string }
+        ownerEmail: { type: string, format: email }
+        ownerName: { type: string }
+        size: { type: integer }
+        contentType: { type: string }
+        state: { type: string, enum: [pending, active] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        canEdit: { type: boolean }
+        isOwner: { type: boolean }
+    DocumentInput:
+      type: object
+      required: [name, category, size, contentType]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        category: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 2000, default: "" }
+        size: { type: integer, minimum: 1, maximum: 26214400 }
+        contentType: { type: string, minLength: 1, maxLength: 120 }
+    DocumentUpload:
+      type: object
+      required: [document, uploadURL, objectPath]
+      properties:
+        document: { $ref: "#/components/schemas/Document" }
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+    DocumentUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        category: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 2000 }
+    DocumentGrant:
+      type: object
+      required: [id, documentId, userId, email, name, permission, grantedBy, grantedAt]
+      properties:
+        id: { type: integer }
+        documentId: { type: integer }
+        userId: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        permission: { type: string, enum: [read, edit] }
+        grantedBy: { type: string }
+        grantedAt: { type: string, format: date-time }
+    DocumentDetail:
+      type: object
+      required: [document, permissions]
+      properties:
+        document: { $ref: "#/components/schemas/Document" }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/DocumentGrant" }
+    PermissionInput:
+      type: object
+      required: [email, permission]
+      properties:
+        email: { type: string, format: email }
+        permission: { type: string, enum: [read, edit] }
+    AuditEvent:
+      type: object
+      required: [id, actorId, actorEmail, actorName, action, outcome, createdAt, previousHash, eventHash]
+      properties:
+        id: { type: integer }
+        actorId: { type: string }
+        actorEmail: { type: string, format: email }
+        actorName: { type: string }
+        documentId: { type: ["integer", "null"] }
+        documentName: { type: ["string", "null"] }
+        action: { type: string }
+        outcome: { type: string, enum: [allowed, denied, recorded] }
+        details: { type: string }
+        createdAt: { type: string, format: date-time }
+        previousHash: { type: string }
+        eventHash: { type: string }
+    Dashboard:
+      type: object
+      required: [ownedCount, sharedWithMeCount, recentDownloads, recentActivity]
+      properties:
+        ownedCount: { type: integer }
+        sharedWithMeCount: { type: integer }
+        recentDownloads: { type: integer }
+        recentActivity:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEvent" }
+    AdminOverview:
+      type: object
+      required: [documentCount, userCount, deniedAttempts24h, auditChainValid]
+      properties:
+        documentCount: { type: integer }
+        userCount: { type: integer }
+        deniedAttempts24h: { type: integer }
+        auditChainValid: { type: boolean }
+    AuditVerification:
+      type: object
+      required: [valid, checkedEvents, firstInvalidEventId]
+      properties:
+        valid: { type: boolean }
+        checkedEvents: { type: integer }
+        firstInvalidEventId: { type: ["integer", "null"] }
+    UserRoleInput:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [admin, owner, viewer] }

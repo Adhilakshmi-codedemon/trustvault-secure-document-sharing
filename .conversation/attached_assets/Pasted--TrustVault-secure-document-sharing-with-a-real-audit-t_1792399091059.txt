@@ -1,0 +1,100 @@
+
+TrustVault — secure document sharing with a real audit trail
+Build a document platform where the wrong person can never read the file, and you can prove who read it. Any stack. Seven days.
+
+The situation
+Every company shares confidential documents: salary letters with employees, contracts with customers, drawings with external partners, audit papers with regulators. Two things go wrong, and both are expensive.
+
+The first is permissions. Someone is given access to a folder so they can see one file, and they can now see forty. Someone leaves the company and their link still works. A file meant for one client is visible to another.
+
+The second is that nobody can answer the question afterwards. When a document leaks, the first question is always who opened this, and when. If the honest answer is "we do not know", the company is in trouble with its customer, its auditor, or both.
+
+You are building TrustVault: a platform where the wrong person cannot reach a document, and where you can prove exactly who reached it.
+
+This is a security problem wearing the clothes of a CRUD application. The screens are straightforward. Making them actually safe is not, and that is what we are marking.
+
+What it must do
+Authentication, with at least three roles: an administrator, a document owner, and a viewer. You decide what each can do and write it down.
+Upload, organise, search and manage documents.
+Permissions per document, at least read and edit, granted to named people.
+Owners can grant access and take it back.
+People who were not granted access cannot read, download, change or delete a document.
+An audit trail of uploads, downloads, changes, deletions and permission changes.
+Search by name, owner, category and date.
+Validation of what is uploaded.
+An administrative view of document activity and permission changes.
+Automated tests showing that one user cannot reach another user's documents.
+That list is the floor, and it is deliberately short. Everything about how is yours, and so is everything the list does not mention. A week is long enough to go well past it, and what you choose to add, or deliberately leave out, is part of what we are judging.
+
+The standard it has to meet
+Three things, and they are not negotiable.
+
+One. A document is reachable only by someone who was granted it. Not "the button is hidden". Not "the page checks". Through any route at all, including ones you did not think of. The server decides, every time.
+
+Two. You can prove who reached it. Afterwards, from the record, including the attempts that were refused. An audit trail that can be quietly altered is not evidence, and we will ask you what stops that.
+
+Three. Taking access away works immediately. Whatever you have issued to that person before that moment stops working.
+
+We are going to attack it
+A judge will spend time trying to get at documents they were not given, using every route they can think of, against your deployed system. We are not going to tell you what they will try. Working that out is the job, and it is the part of this challenge that most separates people.
+
+So, alongside the system, you hand in THREATS.md: the ways you believe this could be broken, what you did about each one, and which ones you knowingly accepted and why. Be honest in it. An entry saying "I know this is weak and here is why I left it" is worth marks. Pretending the hole is not there is worth none, because we will find it.
+
+We hold our own list. You are marked on how much of it you found and closed, and we add marks for anything you found that we had not thought of. Candidates who write four obvious entries and stop will be visible immediately, and so will candidates who thought hard.
+
+Your automated tests should cover the cases in your own THREATS.md. We will take one authorisation check out of your code and run your tests. If they still pass, they were not testing anything.
+
+Where you have freedom
+The stack is entirely yours. Any language, framework, database and host. Pick what you can defend. Angular with [ASP.NET](http://asp.net/) Core and SQL Server is a fine answer. So is something else. We will ask why either way.
+
+Also yours, and these are the real design decisions:
+
+The permission model. Per-document grants, groups, folder inheritance, something else. We will spend much of the interview here.
+How files are stored, and what makes them unreachable without authorisation.
+What "taking access away immediately" means in your design, and what it costs you.
+How the audit trail is protected.
+How far you take sharing with people outside the company, versions, deletion and recovery, retention, and anything else you decide this product needs.
+What the administrator sees, and what counts as something worth noticing.
+Tell us what you chose not to build, and why. A smaller system with a permission model that holds beats a larger one with a hole in it.
+
+Where AI fits, and where it must not decide
+Use AI to build this. We expect it, and the marks reflect it.
+
+If you want AI inside the product, the obvious place is helping an owner decide who should see a document. A suggestion is useful. The machine must never widen access on its own. A person confirms, and both the suggestion and the decision go into the audit.
+
+PROMPTS.md
+Keep a file called PROMPTS.md in your repository, and write it as you go. Your commit history shows us whether you did, and one file added on the last evening is worth very little.
+
+It needs at least five dated entries. Each one:
+
+what you asked the tool to do, with the prompt or a fair summary of it;
+what it produced;
+what was wrong with it, specifically;
+what you did instead, with a link to the commit where you fixed it.
+At least two of those entries must be about authorisation, access control or the audit trail. That is where a confident wrong answer from an AI does the most damage in this system, and noticing it is the skill we are hiring for. If you genuinely had no trouble there, say so and show us the code you checked and how you checked it.
+
+Also put in whatever prompts, instructions or context files you reused across the week. Those are the most interesting part, because they show how you work rather than what you typed once.
+
+"It was all fine" is not an entry. If the file says the AI was helpful five times, it scores nothing.
+
+What you hand in
+A public Git repository, with history across the week rather than one commit at the end.
+A live URL we can open, with seed data, and credentials in the README for one account of each role.
+THREATS.md, as described above.
+PROMPTS.md, as described above.
+Automated tests, including the ones that prove one user cannot reach another's documents.
+Database schema and setup scripts, and deployment instructions that work from a clean clone.
+API documentation, saying for each endpoint who is allowed to call it.
+A five-minute demo video.
+A short write-up: what you built, what you deliberately did not, your permission model in your own words, how you used AI and where it was wrong, and what is unfinished. Honesty about gaps scores better than hiding them.
+How we mark it
+Marks	What
+35	Security. What a judge can get at on your deployed system. The same attempts for everyone
+15	Threat thinking. Your THREATS.md against ours, plus anything you found that we did not, plus whether your tests actually test it
+15	Functionality. The ten requirements, working
+15	How you used AI. Your PROMPTS.md: evidence of directing the tool and catching it being wrong. Heavy use with no example of catching an error scores near zero here
+10	Engineering quality. Readable, sensibly built, errors handled
+10	Documentation, deployment and demo. Can someone else run it, operate it and trust it
+One document reached by someone who should not have reached it costs most of the first band, whatever else works. That is deliberate. A document platform that leaks is not a partially working document platform.
+
+Deploy early in the week, not on the last day. People who leave it to the end usually do not deploy at all
